@@ -1,0 +1,14 @@
+version: "3.8"
+
+networks:
+  agent_network:
+    driver: bridge
+
+services:
+  agent:
+    build: .
+    container_name: agent
+    restart: always
+    ports: "3000:3000"
+    networks:
+      - agent
