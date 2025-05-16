@@ -1,0 +1,12 @@
+openai 
+requests 
+pymongo
+motor 
+dotenv
+fastapi
+uvicorn
+pydantic
+pandas 
+numpy
+tqdm
+python-multipart
