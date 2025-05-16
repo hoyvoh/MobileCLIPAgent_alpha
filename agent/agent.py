@@ -2,6 +2,7 @@ from .history import History
 from .personalization import Personalization
 from .prompts import PROMPTS
 import openai
+import asyncio
 import os 
 from typing import Optional, Union
 from pydantic import BaseModel, Field, StrictInt, StrictFloat, field_validator
@@ -126,12 +127,11 @@ class Agent:
         self.personalization = Personalization(client=self.client, summarizer = self.chatbot)
 
     async def get_response(self, user_id, input_data):
-        # print("Getting past conversations")
-        past_convo_response = await self.history.retrieve_history(user_id=user_id, look_back=5)
-        # logger.info(f"Past convo result before dump: {past_convo_response}")
+        history_task = self.history.retrieve_history(user_id=user_id, look_back=5)
+        summary_task = self.personalization.retrieve_user_summary(user_id)
+        past_convo_response, user_summary_response = await asyncio.gather(history_task, summary_task)
 
         past_convo_result = past_convo_response.model_dump()
-        # logger.info(f"Past convo result after dump: {past_convo_result}")
 
         if past_convo_result["status"] == "success" and past_convo_result.get("data"):
             chat_history = past_convo_result["data"].get("history", [])
@@ -141,9 +141,8 @@ class Agent:
             chat_history = ["No past conversations found."]
             logger.info("No past conversations found.")
 
-        # print("Getting user summary")
-        user_summary_response = await self.personalization.retrieve_user_summary(user_id)
         user_summary_result = user_summary_response.model_dump()
+        
         if user_summary_result["status"] == "success" and user_summary_result.get("data"):
             user_summary = user_summary_result["data"].get("summary", {})
         else:
