@@ -6,9 +6,12 @@ networks:
 
 services:
   agent:
-    build: .
+    build:
+      context: .
+      dockerfile: .dockerfile
     container_name: agent
     restart: always
-    ports: "3000:3000"
+    ports:
+      - "8000:8000"
     networks:
-      - agent
+      - agent_network
