@@ -28,9 +28,9 @@ app.add_middleware(
 
 @app.post("/api/v1/agent/get_text_response/", summary="Get response from agent")
 async def get_response(
-    conversation_id: str = Form(None),
-    user_id: str = Form(None),
-    text: str = Form(None),
+    conversation_id: str = Form(...),
+    user_id: str = Form(...),
+    text: str = Form(...),
 ):
 
     print(f"Received request with conversation_id: {conversation_id}, user_id: {user_id}, text: {text}")
