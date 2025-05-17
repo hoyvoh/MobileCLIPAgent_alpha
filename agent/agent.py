@@ -173,17 +173,11 @@ class Agent:
                 files = {
                     "image": ("image.jpg", image_bytes, "image/jpeg")
                 }
-
                 product_results = requests.post(IMAGE_EMBEDDING_URL, files=files).json()
-                # print("Image search results:", product_results)
 
-                if product_results.get("status") == "success":
-                    product_results = product_results.get("data", {}).get("top_k_results", [])
-                else:
-                    product_results = []
-                # print("Uploaded image to S3")
                 image_url = upload_image_to_s3(image_bytes)
                 # print("Image URL:", image_url)
+                product_results = product_results.get("top_k_results", [])
                 full_context_query = f"User's intent: {input_data.get("query", "Tìm sản phẩm bằng hình")}\nRelevant products:{str(product_results)}\nRecent Conversations:{chat_history}\nUser Summary:{user_summary}"
                 # print("Full context query:", full_context_query)
         else:
@@ -209,7 +203,7 @@ class Agent:
                 product_results = requests.post(TEXT_EMBEDDING_URL, json=body).json()
                 # print("Product results:", product_results)
                 if product_results.get("status") == "success":
-                    product_results = product_results.get("data", {}).get("top_k_results", [])
+                    product_results = product_results.get("top_k_results", [])
                 else:
                     product_results = []
                 full_context_query += f"\nRelevant products:{str(product_results)}"
@@ -222,7 +216,7 @@ class Agent:
                 {"role": "user", "content": full_context_query}
             ]
         ).choices[0].message.content
-
+        logger.info(f"Product to respond: {product_results}")
         response_data = {
             "user_id": user_id,
             "user_query": input_data.get("query", ""),

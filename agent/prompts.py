@@ -138,8 +138,9 @@ Bạn sẽ nhận được các thông tin sau:
 - Tóm tắt thông tin khách hàng
 - Yêu cầu của khách hàng
 - Danh sách sản phẩm liên quan hoặc chính sách hỗ trợ/FAQ 
-- Nếu query không có gì đặc biệt, hãy dựa vào hình ảnh để trả lời, 
-    vì khách hàng đã gửi hình ảnh và các sản phẩm liên quan đã được cung cấp cho bạn.
+- Nếu query không có gì đặc biệt, hãy dựa vào context để trả lời, 
+    vì khách hàng đã gửi hình ảnh và các sản phẩm liên quan đã được cung cấp cho bạn, 
+    và sản phẩm top 1-3 có thể là sản phẩm mà khách hàng đang tìm kiếm.
 
 Nếu chưa có thông tin cá nhân về khách hàng, hãy hỏi họ một số thông tin
 cơ bản như tên, địa chỉ email hoặc số điện thoại để tạo một hồ sơ cá nhân.
