@@ -1,6 +1,6 @@
 import os 
 import sys
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware  
 from typing import Optional 
 from agent import Agent 
@@ -24,13 +24,30 @@ app.add_middleware(
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+async def parse_image_as_bytes(image: Optional[UploadFile] = File(None)) -> Optional[bytes]:
+    if image is None:
+        return None
+    
+    if not image.filename or image.filename.strip() == "":
+        return None  # file không chọn
+    try:
+        content = await image.read()
+        await image.seek(0)
+        if len(content) == 0:
+            return b''  # file rỗng 
+        return content
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid image input: {str(e)}")
+
+
 @app.post("/api/v1/agent/get_response/", summary="Get response from agent")
 async def get_response(
     conversation_id: str = Form(...),
     user_id: str = Form(...),
     text: str = Form(None),
-    image: Optional[UploadFile] = File(None),
-):
+    image: Optional[bytes] = Depends(parse_image_as_bytes),
+):  
+    print(f"Received request with conversation_id: {conversation_id}, user_id: {user_id}, text: {text}")
     try:
         timestamp = datetime.datetime.now().isoformat()
         input_data = {
