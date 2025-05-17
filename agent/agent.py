@@ -4,8 +4,8 @@ from .prompts import PROMPTS
 import openai
 import asyncio
 import os 
-from typing import Optional, Union
-from pydantic import BaseModel, Field, StrictInt, StrictFloat, field_validator
+from typing import Optional, Union, Dict, Any, Literal
+from pydantic import BaseModel, Field
 from typing_extensions import Literal
 from datetime import datetime
 import requests
@@ -99,22 +99,31 @@ def upload_image_to_s3(
         raise RuntimeError(f"Failed to upload image: {e.response['Error']['Message']}")
 
 class FilterResponse(BaseModel):
-    rating_average: Optional[StrictFloat] = Field(None, description="Rating from 0 to 5")
-    # price: Optional[List[StrictInt]] = None  
-    review_count: Optional[StrictInt] = None
+    rating_average: Optional[Dict[str, float]] = Field(
+        None, description="e.g., {'$gte': 4}", json_schema_extra={
+            "type": "object",
+            "additionalProperties": {"type": ["number", "array"]}
+        }
+    )
+    price: Optional[Dict[str, float]] = Field(
+        None, description="e.g., {'$gte': 500000, '$lte': 2000000}", json_schema_extra={
+            "type": "object",
+            "additionalProperties": {"type": ["number", "array"]}
+        }
+    )
+    review_count: Optional[Dict[str, float]] = Field(
+        None, description="e.g., {'$gte': 10}", json_schema_extra={
+            "type": "object",
+            "additionalProperties": {"type": ["number", "array"]}
+        }
+    )
     category_level_1: Optional[str] = None
 
-    @field_validator("rating_average")
-    @classmethod
-    def validate_rating_average(cls, value):
-        if value is not None and not (0 <= value <= 5):
-            raise ValueError("rating_average must be between 0 and 5")
-        return value
 
 class RouterResponse(BaseModel):
     needs_context: bool
-    intent: str 
-    query: Optional[str]
+    intent: Optional[str] = None
+    query: Optional[str] = None
     collection: Literal["products", "policies_FAQ", "exists"]
     filter: Optional[FilterResponse] = None
 
@@ -176,22 +185,26 @@ class Agent:
                 product_results = requests.post(IMAGE_EMBEDDING_URL, files=files).json()
 
                 image_url = upload_image_to_s3(image_bytes)
+                # print("\nProduct results:", product_results)
                 # print("Image URL:", image_url)
                 product_results = product_results.get("top_k_results", [])
+                # print("\nProduct results:", product_results)
                 full_context_query = f"User's intent: {input_data.get("query", "Tìm sản phẩm bằng hình")}\nRelevant products:{str(product_results)}\nRecent Conversations:{chat_history}\nUser Summary:{user_summary}"
                 # print("Full context query:", full_context_query)
         else:
             print("On text track")
+            # logger.info(RouterResponse.model_json_schema())
             results = self.chatbot.beta.chat.completions.parse(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": PROMPTS.TEXT_PROMPT},
                     {"role": "user", "content": router_message}
                 ],
-                response_format=RouterResponse,
+                response_format = RouterResponse
             ).choices[0].message.parsed
             full_context_query = f"User's intent: {results.intent}\nRecent Conversations:{chat_history}\nUser Summary:{user_summary}"
-            if results.needs_context:
+            # logger.info(f"Router results: {results}")
+            if True: # results.needs_context
                 logger.info("User needs context")
                 body = {
                     'query':results.query,
@@ -201,11 +214,10 @@ class Agent:
                 # logger.info(f"Body for text embedding: {body}")
 
                 product_results = requests.post(TEXT_EMBEDDING_URL, json=body).json()
-                # print("Product results:", product_results)
-                if product_results.get("status") == "success":
-                    product_results = product_results.get("top_k_results", [])
-                else:
-                    product_results = []
+                # print("\nProduct results:", product_results)
+
+                product_results = product_results.get("top_k_results", [])
+
                 full_context_query += f"\nRelevant products:{str(product_results)}"
 
         # logger.info(f"Full context query: {full_context_query}")
