@@ -156,10 +156,12 @@ class Agent:
         # print(router_message)
 
         image_url = ''
+        product_results=[]
 
         if input_data.get("image"):
 
             image = input_data.get("image")
+            print("On image track")
 
             if image:
                 # Check nếu là UploadFile thì phải await, nếu là bytes thì dùng luôn
@@ -185,6 +187,7 @@ class Agent:
                 full_context_query = f"User's intent: {input_data.get("query", "Tìm sản phẩm bằng hình")}\nRelevant products:{str(product_results)}\nRecent Conversations:{chat_history}\nUser Summary:{user_summary}"
                 # print("Full context query:", full_context_query)
         else:
+            print("On text track")
             results = self.chatbot.beta.chat.completions.parse(
                 model=self.model,
                 messages=[
