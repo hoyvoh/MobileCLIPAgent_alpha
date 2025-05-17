@@ -117,7 +117,6 @@ class FilterResponse(BaseModel):
             "additionalProperties": {"type": ["number", "array"]}
         }
     )
-    category_level_1: Optional[str] = None
 
 
 class RouterResponse(BaseModel):
@@ -204,23 +203,26 @@ class Agent:
             ).choices[0].message.parsed
             full_context_query = f"User's intent: {results.intent}\nRecent Conversations:{chat_history}\nUser Summary:{user_summary}"
             # logger.info(f"Router results: {results}")
-            if True: # results.needs_context
+            if True:
                 logger.info("User needs context")
                 body = {
                     'query':results.query,
                     'filter':results.filter.model_dump() if results.filter else {}
                 }
 
-                # logger.info(f"Body for text embedding: {body}")
-
                 product_results = requests.post(TEXT_EMBEDDING_URL, json=body).json()
-                # print("\nProduct results:", product_results)
-
                 product_results = product_results.get("top_k_results", [])
+
+                if not product_results:
+                    logger.info("Empty search result. Proceed to search again, no filter...")
+                    body = {
+                        'query':results.query
+                    }
+                    product_results = requests.post(TEXT_EMBEDDING_URL, json=body).json()
+                    product_results = product_results.get("top_k_results", [])
 
                 full_context_query += f"\nRelevant products:{str(product_results)}"
 
-        # logger.info(f"Full context query: {full_context_query}")
         final_response = self.chatbot.chat.completions.create(
             model=self.model,
             messages=[
