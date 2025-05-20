@@ -252,6 +252,7 @@ class Agent:
             logger.warning(f"Failed to update user summary for user {user_id}: {update_summary_response.error}")
         
         response_data.pop("_id", None)
+        response_data.pop("context", None)
 
         return response_data
 
