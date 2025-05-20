@@ -1,8 +1,12 @@
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
+import asyncio
 import logging
 from pydantic import BaseModel
 from typing import Dict, Optional
+from os import getenv
+from dotenv import load_dotenv
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -12,6 +16,11 @@ logger = logging.getLogger(__name__)
 
 HISTORY_DB = "ChatHistory"
 HISTORY_COLLECTION = "ChatHistory"
+MONGO_USER = getenv("MONGO_USER")
+MONGO_PASSWORD = getenv("MONGO_PASSWORD")
+CONNECTION_STRING = getenv("CONNECTION_STRING")
+URI = f"mongodb+srv://{MONGO_USER}:{MONGO_PASSWORD}@{CONNECTION_STRING}"
+
 '''
  class History:
 Initialization
@@ -41,19 +50,41 @@ def serialize_mongo_doc(doc):
         if "_id" in doc and isinstance(doc["_id"], ObjectId):
             doc["_id"] = str(doc["_id"])
     return doc
-
+def serialize_mongo_doc_sync(doc):
+    return serialize_mongo_doc(doc)
 class History:
-    def __init__(self, client: AsyncIOMotorClient):
+    def __init__(self, uri: str = URI):
         try:
+            self.uri=uri
             self.HISTORY_DB = HISTORY_DB
             self.HISTORY_COLLECTION = HISTORY_COLLECTION
-            self.client = client
-            self.db = self.client[self.HISTORY_DB]
-            self.collection = self.db[self.HISTORY_COLLECTION]
+            self.client = None
+            self.db = None
+            self.collection = None
             logger.info("MongoDB (Motor) connection established successfully.")
+            self.ensure_indexes()
         except Exception as e:
             logger.error(f"Failed to initialize MongoDB connection: {str(e)}")
             self.client = None  # Mark unusable safely
+
+    async def get_collection(self):
+        if self.client is None:
+            self.client = AsyncIOMotorClient(self.uri)
+        if self.collection is None:
+            self.db = self.client[HISTORY_DB]
+            self.collection = self.db[HISTORY_COLLECTION]
+        
+        return self.collection
+
+    async def close(self):
+        if self.client:
+            self.client.close()
+            self.client = None
+
+    async def ensure_indexes(self):
+        collection = await self.get_collection()
+        await collection.create_index([("user_id", 1), ("timestamp", -1)])
+        self.close()
 
     async def retrieve_history(self, user_id: str, filter: Dict = {}, look_back: int = 10) -> APIResponse:
         if not user_id:
@@ -64,11 +95,20 @@ class History:
         try:
             query_filter = {"user_id": user_id}
             query_filter.update(filter)
-
-            cursor = self.collection.find(query_filter).sort("timestamp", -1).limit(look_back)
+            
+            collection = await self.ensure_indexes()
+            projection = {"user_query": 1, "response": 1, "_id": 0, "created_at":0, "updated_at":0}
+            cursor = collection.find(query_filter, projection).sort("timestamp", -1).limit(look_back)
             history_list = await cursor.to_list(length=look_back)
+
             # logger.info(f"History raw: {history_list}")
-            history_list = [serialize_mongo_doc(h) for h in history_list]
+            
+            loop = asyncio.get_running_loop()
+            history_list = await asyncio.gather(*[
+                loop.run_in_executor(None, serialize_mongo_doc_sync, doc)
+                for doc in history_list
+            ])
+
             history_list = [
                 [history["user_query"], history["response"]]
                 for history in history_list
@@ -94,7 +134,9 @@ class History:
             if missing_fields:
                 return APIResponse(status="error", error=f"Missing required fields: {', '.join(missing_fields)}")
 
-            await self.collection.insert_one(response_data)
+            collection = await self.get_collection()
+            await collection.insert_one(response_data)
+
             logger.info(f"History saved successfully for user {user_id}")
 
             return APIResponse(status="success", data={"message": "History saved successfully"})

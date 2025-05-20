@@ -4,13 +4,11 @@ from .prompts import PROMPTS
 import openai
 import asyncio
 import os 
-from typing import Optional, Union, Dict, Any, Literal
+from typing import Optional, Union, Dict, Literal
 from pydantic import BaseModel, Field
 from typing_extensions import Literal
 from datetime import datetime
 import requests
-from motor.motor_asyncio import AsyncIOMotorClient
-import dotenv
 import boto3
 import uuid
 from botocore.exceptions import NoCredentialsError, ClientError
@@ -20,12 +18,6 @@ from fastapi import UploadFile
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-dotenv.load_dotenv(override=True)
-
-MONGO_USER = os.getenv("MONGO_USER")
-MONGO_PASSWORD = os.getenv("MONGO_PASSWORD")
-CONNECTION_STRING = os.getenv("CONNECTION_STRING")
-URI = f"mongodb+srv://{MONGO_USER}:{MONGO_PASSWORD}@{CONNECTION_STRING}"
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai.api_key = OPENAI_API_KEY
@@ -127,12 +119,11 @@ class RouterResponse(BaseModel):
     filter: Optional[FilterResponse] = None
 
 class Agent:
-    def __init__(self, model = "gpt-4o-mini-2024-07-18"):
-        self.client = AsyncIOMotorClient(URI)
+    def __init__(self, model = "gpt-4.1-mini"):
         self.chatbot = openai.OpenAI()
         self.model = model
-        self.history = History(client=self.client) 
-        self.personalization = Personalization(client=self.client, summarizer = self.chatbot)
+        self.history = History() 
+        self.personalization = Personalization(summarizer = self.chatbot)
 
     async def get_response(self, user_id, input_data):
         history_task = self.history.retrieve_history(user_id=user_id, look_back=5)
@@ -188,7 +179,7 @@ class Agent:
                 # print("Image URL:", image_url)
                 product_results = product_results.get("top_k_results", [])
                 # print("\nProduct results:", product_results)
-                full_context_query = f"User's intent: {input_data.get("query", "Tìm sản phẩm bằng hình")}\nRelevant products:{str(product_results)}\nRecent Conversations:{chat_history}\nUser Summary:{user_summary}"
+                full_context_query = f"User's intent: {input_data.get("query", "Tìm sản phẩm bằng hình")}\nUser Preferences:{user_summary}\nRelevant products:{str(product_results)}\nRecent Conversations:{chat_history}"
                 # print("Full context query:", full_context_query)
         else:
             print("On text track")
@@ -201,9 +192,9 @@ class Agent:
                 ],
                 response_format = RouterResponse
             ).choices[0].message.parsed
-            full_context_query = f"User's intent: {results.intent}\nRecent Conversations:{chat_history}\nUser Summary:{user_summary}"
+            full_context_query = f"User's intent: {results.intent}\nUser Preferences:\n{user_summary}\nRecent Conversations:\n{chat_history}"
             # logger.info(f"Router results: {results}")
-            if True:
+            if results.intent:
                 logger.info("User needs context")
                 body = {
                     'query':results.query,
@@ -240,16 +231,14 @@ class Agent:
             "context": full_context_query,
             "timestamp": datetime.now().isoformat(),
         }
-        # print("Response data:", response_data)
 
-        # Always check save/update results
-        save_history_response = await self.history.add_to_history(user_id, response_data)
-        if save_history_response.status != "success":
-            logger.warning(f"Failed to save history for user {user_id}: {save_history_response.error}")
+        history_task = self.history.add_to_history(user_id, response_data)
+        summary_task = self.personalization.update_user_summary(user_id, response_data)
+        save_history_response, update_summary_response = await asyncio.gather(history_task, summary_task)
 
-        update_summary_response = await self.personalization.update_user_summary(user_id, response_data)
-        if update_summary_response.status != "success":
+        if update_summary_response.status != "success" or save_history_response.status != "success":
             logger.warning(f"Failed to update user summary for user {user_id}: {update_summary_response.error}")
+            logger.warning(f"Failed to save history for user {user_id}: {save_history_response.error}")
         
         response_data.pop("_id", None)
         response_data.pop("context", None)
