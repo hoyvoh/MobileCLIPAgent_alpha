@@ -6,6 +6,7 @@ from typing import Optional
 from agent import Agent 
 import datetime 
 from fastapi.exceptions import HTTPException
+from contextlib import asynccontextmanager
 import logging
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -13,12 +14,15 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI() 
-agent = Agent() 
+agent = Agent()
 
-@app.on_event("startup")
-async def setup():
+@asynccontextmanager 
+async def lifespan(app: FastAPI):
     await agent.history.ensure_indexes()
+    yield 
+    await agent.history.close()
+
+app = FastAPI(lifespan=lifespan) 
 
 app.add_middleware(
     CORSMiddleware,
@@ -48,7 +52,7 @@ async def get_response(
             input_data=input_data
         )
         
-        logger.info(f"Response from agent: {response}")
+        logger.info(f"Agent has responded")
 
         response_time = datetime.datetime.now()
         response["latency"] = (response_time - datetime.datetime.fromisoformat(timestamp)).total_seconds()
@@ -98,7 +102,7 @@ async def get_response(
             input_data=input_data
         )
         
-        logger.info(f"Response from agent: {response}")
+        logger.info(f"Agent has responded")
 
         response_time = datetime.datetime.now()
         response["latency"] = (response_time - datetime.datetime.fromisoformat(timestamp)).total_seconds()

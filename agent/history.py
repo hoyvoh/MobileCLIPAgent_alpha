@@ -68,7 +68,7 @@ class History:
             self.db = None
             self.collection = None
             logger.info("MongoDB (Motor) connection established successfully.")
-            self.ensure_indexes()
+
         except Exception as e:
             logger.error(f"Failed to initialize MongoDB connection: {str(e)}")
             self.client = None  # Mark unusable safely
@@ -103,8 +103,9 @@ class History:
             query_filter = {"user_id": user_id}
             query_filter.update(filter)
             
-            collection = await self.ensure_indexes()
-            projection = {"user_query": 1, "response": 1, "_id": 0, "created_at":0, "updated_at":0}
+            collection = await self.get_collection()
+            projection = {"user_query": 1, "response": 1, "_id": 0}
+            
             cursor = collection.find(query_filter, projection).sort("timestamp", -1).limit(look_back)
             history_list = await cursor.to_list(length=look_back)
 

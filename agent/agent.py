@@ -134,25 +134,23 @@ class Agent:
 
         if past_convo_result["status"] == "success" and past_convo_result.get("data"):
             chat_history = past_convo_result["data"].get("history", [])
-            # logger.info(f"Chat history: {chat_history}")
 
         else:
-            chat_history = ["No past conversations found."]
+            chat_history = []
             logger.info("No past conversations found.")
 
         user_summary_result = user_summary_response.model_dump()
+        logger.info("Summary results:", user_summary_result)
         
         if user_summary_result["status"] == "success" and user_summary_result.get("data"):
-            user_summary = user_summary_result["data"].get("summary", {})
+            user_summary = user_summary_result["data"].get("summary", "")
         else:
-            user_summary = {"personal_info": [], "preferences": []}
+            user_summary = ""
 
         # print("Building router message")
         router_message = f"Past conversations: {chat_history}\nUser summary: {user_summary}\n"
         if input_data.get("query"):
-            router_message += f"User query: {input_data['query']}"
-
-        # print(router_message)
+            router_message = f"User query: {input_data['query']}\n"+ router_message
 
         image_url = ''
         product_results=[]
@@ -160,7 +158,7 @@ class Agent:
         if input_data.get("image"):
 
             image = input_data.get("image")
-            print("On image track")
+            logger.info("On image track")
 
             if image:
                 # Check nếu là UploadFile thì phải await, nếu là bytes thì dùng luôn
@@ -182,7 +180,7 @@ class Agent:
                 full_context_query = f"User's intent: {input_data.get("query", "Tìm sản phẩm bằng hình")}\nUser Preferences:{user_summary}\nRelevant products:{str(product_results)}\nRecent Conversations:{chat_history}"
                 # print("Full context query:", full_context_query)
         else:
-            print("On text track")
+            logger.info("On text track")
             # logger.info(RouterResponse.model_json_schema())
             results = self.chatbot.beta.chat.completions.parse(
                 model=self.model,
@@ -192,14 +190,15 @@ class Agent:
                 ],
                 response_format = RouterResponse
             ).choices[0].message.parsed
-            full_context_query = f"User's intent: {results.intent}\nUser Preferences:\n{user_summary}\nRecent Conversations:\n{chat_history}"
-            # logger.info(f"Router results: {results}")
-            if results.intent:
+            full_context_query = f"User's question: {input_data.get("query")}\nUser Preferences:\n{user_summary}\nRecent Conversations:\n{chat_history}"
+ 
+            if results.intent and results.query:
                 logger.info("User needs context")
                 body = {
                     'query':results.query,
                     'filter':results.filter.model_dump() if results.filter else {}
                 }
+                logger.info("Querying with key: %s", results.query)
 
                 product_results = requests.post(TEXT_EMBEDDING_URL, json=body).json()
                 product_results = product_results.get("top_k_results", [])
@@ -221,7 +220,7 @@ class Agent:
                 {"role": "user", "content": full_context_query}
             ]
         ).choices[0].message.content
-        logger.info(f"Product to respond: {product_results}")
+        # logger.info(f"Product to respond: {product_results}")
         response_data = {
             "user_id": user_id,
             "user_query": input_data.get("query", ""),
@@ -233,7 +232,7 @@ class Agent:
         }
 
         history_task = self.history.add_to_history(user_id, response_data)
-        summary_task = self.personalization.update_user_summary(user_id, response_data)
+        summary_task = self.personalization.create_or_update_summary(user_id, response_data)
         save_history_response, update_summary_response = await asyncio.gather(history_task, summary_task)
 
         if update_summary_response.status != "success" or save_history_response.status != "success":
@@ -242,6 +241,7 @@ class Agent:
         
         response_data.pop("_id", None)
         response_data.pop("context", None)
+        response_data.pop("timestamp", None)
 
         return response_data
 

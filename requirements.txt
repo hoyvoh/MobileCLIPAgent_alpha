@@ -11,3 +11,4 @@ numpy
 tqdm
 python-multipart
 boto3
+redis
