@@ -12,3 +12,7 @@ tqdm
 python-multipart
 boto3
 redis
+aiologger 
+asyncio_throttle
+tenacity
+
