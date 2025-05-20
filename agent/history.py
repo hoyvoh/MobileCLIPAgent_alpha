@@ -7,6 +7,8 @@ from typing import Dict, Optional
 from os import getenv
 from dotenv import load_dotenv
 from datetime import datetime
+from pymongo.errors import DuplicateKeyError, ConnectionFailure, OperationFailure
+
 load_dotenv()
 
 # Configure logging
@@ -38,7 +40,7 @@ class APIResponse(BaseModel):
     status: str
     error: str = None
     data: dict = None
-    
+
 class HistoryEntry(BaseModel):
     user_id: str = Field(..., description="ID of the user")
     user_query: str = Field(..., description="Query made by the user")
@@ -123,9 +125,18 @@ class History:
             logger.info(f"Retrieved {len(history_list)} history entries for user {user_id}")
             return APIResponse(status="success", data={"history": history_list})
 
+        except ConnectionFailure:
+            logger.error("MongoDB connection failed.")
+            return APIResponse(status="error", error="Could not connect to the database.")
+
+        except OperationFailure as oe:
+            logger.error(f"MongoDB operation failed: {oe}")
+            return APIResponse(status="error", error=f"Database error: {str(oe)}")
+
         except Exception as e:
-            logger.error(f"Error retrieving history for user {user_id}: {str(e)}")
-            return APIResponse(status="error", error="Failed to retrieve chat history")
+            logger.exception(f"Unexpected error retrieving history for user {user_id}")
+            return APIResponse(status="error", error="Unexpected error occurred while retrieving history.")
+
 
     async def add_to_history(self, user_id: str, response_data: Dict) -> APIResponse:
         if not user_id:
@@ -144,6 +155,19 @@ class History:
             await collection.insert_one(validated_data)
             logger.info(f"History saved successfully for user {user_id}")
             return APIResponse(status="success", data={"message": "History saved successfully"})
+        except DuplicateKeyError:
+            logger.warning(f"Duplicate entry attempted for user {user_id}")
+            return APIResponse(status="error", error="Duplicate history entry. This conversation may have already been saved.")
+
+        except ConnectionFailure:
+            logger.error("MongoDB connection failed.")
+            return APIResponse(status="error", error="Could not connect to the database. Please try again later.")
+
+        except OperationFailure as oe:
+            logger.error(f"MongoDB operation failed: {oe}")
+            return APIResponse(status="error", error=f"Database error: {str(oe)}")
+
         except Exception as e:
-            logger.error(f"Error saving history for user {user_id}: {str(e)}")
-            return APIResponse(status="error", error="Failed to save chat history")
+            logger.exception(f"Unexpected error saving history for user {user_id}")
+            return APIResponse(status="error", error="Unexpected error occurred. Please contact support.")
+
