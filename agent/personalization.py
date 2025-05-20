@@ -4,6 +4,16 @@ import logging
 from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
+from dotenv import load_dotenv
+from os import getenv
+
+load_dotenv(override=True)
+
+MONGO_USER = getenv("MONGO_USER")
+MONGO_PASSWORD = getenv("MONGO_PASSWORD")
+CONNECTION_STRING = getenv("CONNECTION_STRING")
+URI = f"mongodb+srv://{MONGO_USER}:{MONGO_PASSWORD}@{CONNECTION_STRING}"
+
 
 '''
 Class Personalization
@@ -53,7 +63,7 @@ def serialize_mongo_doc(doc):
     return doc
 
 class Personalization:
-    def __init__(self, client: AsyncIOMotorClient, summarizer=None):
+    def __init__(self, uri=URI, summarizer=None):
         try:
             self.PERSONALIZATION_DB = PERSONALIZATION_DB
             self.PERSONALIZATION_COLLECTION = PERSONALIZATION_COLLECTION
