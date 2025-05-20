@@ -2,10 +2,11 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
 import asyncio
 import logging
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ValidationError
 from typing import Dict, Optional
 from os import getenv
 from dotenv import load_dotenv
+from datetime import datetime
 load_dotenv()
 
 # Configure logging
@@ -32,16 +33,19 @@ Methods
 - insert to history with timestamp
 '''
 
-class APIResponse(BaseModel):
-    status: str
-    error: Optional[str] = None
-    data: Optional[Dict] = None
-
 logger = logging.getLogger("agent.history")
 class APIResponse(BaseModel):
     status: str
     error: str = None
     data: dict = None
+    
+class HistoryEntry(BaseModel):
+    user_id: str = Field(..., description="ID of the user")
+    user_query: str = Field(..., description="Query made by the user")
+    response: str = Field(..., description="System's response to the user")
+    context: Optional[str] = Field(None, description="Any relevant context or summary")
+    timestamp: datetime = Field(..., description="When the exchange occurred")
+
 
 def serialize_mongo_doc(doc):
     """Helper to convert ObjectId to str inside a doc."""
@@ -84,7 +88,8 @@ class History:
     async def ensure_indexes(self):
         collection = await self.get_collection()
         await collection.create_index([("user_id", 1), ("timestamp", -1)])
-        self.close()
+        logger.info("MongoDB indexes ensured.")
+
 
     async def retrieve_history(self, user_id: str, filter: Dict = {}, look_back: int = 10) -> APIResponse:
         if not user_id:
@@ -129,18 +134,16 @@ class History:
             return APIResponse(status="error", error="response_data must be a non-empty dictionary")
 
         try:
-            required_fields = ["user_id", "user_query", "response", "context", "timestamp"]
-            missing_fields = [f for f in required_fields if f not in response_data]
-            if missing_fields:
-                return APIResponse(status="error", error=f"Missing required fields: {', '.join(missing_fields)}")
+            validated_data = HistoryEntry(**response_data).model_dump()
+        except ValidationError as ve:
+            logger.error(f"Validation failed: {ve}")
+            return APIResponse(status="error", error=f"Invalid data: {ve.errors()}")
 
+        try:
             collection = await self.get_collection()
-            await collection.insert_one(response_data)
-
+            await collection.insert_one(validated_data)
             logger.info(f"History saved successfully for user {user_id}")
-
             return APIResponse(status="success", data={"message": "History saved successfully"})
-
         except Exception as e:
             logger.error(f"Error saving history for user {user_id}: {str(e)}")
             return APIResponse(status="error", error="Failed to save chat history")

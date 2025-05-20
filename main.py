@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 app = FastAPI() 
 agent = Agent() 
 
+@app.on_event("startup")
+async def setup():
+    await agent.history.ensure_indexes()
 
 app.add_middleware(
     CORSMiddleware,
