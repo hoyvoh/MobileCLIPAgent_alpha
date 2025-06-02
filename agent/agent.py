@@ -222,27 +222,26 @@ class Agent:
             ]
         ).choices[0].message.content
         logger.info(f"Product to respond: {product_results}")
-        response_data = {
-            "user_id": user_id,
+
+        base_response = {
             "user_query": input_data.get("query", ""),
             "image": image_url,
             "response": final_response,
-            "products": product_results, 
-            "context": full_context_query,
-            "timestamp": datetime.now().isoformat(),
         }
 
-        history_task = self.history.add_to_history(user_id, response_data)
-        summary_task = self.personalization.update_user_summary(user_id, response_data)
+        history_task = self.history.add_to_history(user_id, base_response)
+        summary_task = self.personalization.update_user_summary(user_id, base_response)
         save_history_response, update_summary_response = await asyncio.gather(history_task, summary_task)
 
         if update_summary_response.status != "success" or save_history_response.status != "success":
             logger.warning(f"Failed to update user summary for user {user_id}: {update_summary_response.error}")
             logger.warning(f"Failed to save history for user {user_id}: {save_history_response.error}")
         
-        response_data.pop("_id", None)
-        response_data.pop("context", None)
+        base_response.pop("_id", None)
+        base_response["user_id"]=user_id
+        base_response["timestamp"] = datetime.now().isoformat() 
+        base_response["products"] = product_results
 
-        return response_data
+        return base_response
 
 

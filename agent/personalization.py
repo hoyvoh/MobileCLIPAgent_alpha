@@ -67,7 +67,7 @@ class Personalization:
         try:
             self.PERSONALIZATION_DB = PERSONALIZATION_DB
             self.PERSONALIZATION_COLLECTION = PERSONALIZATION_COLLECTION
-            self.client = client
+            self.client = AsyncIOMotorClient(uri)
             self.db = self.client[self.PERSONALIZATION_DB]
             self.collection = self.db[self.PERSONALIZATION_COLLECTION]
             logger.info("MongoDB (Motor) connection established successfully.")
