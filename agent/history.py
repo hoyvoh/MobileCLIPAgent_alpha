@@ -129,7 +129,7 @@ class History:
             return APIResponse(status="error", error="response_data must be a non-empty dictionary")
 
         try:
-            required_fields = ["user_id", "user_query", "response", "context", "timestamp"]
+            required_fields = ["user_query", "response"]
             missing_fields = [f for f in required_fields if f not in response_data]
             if missing_fields:
                 return APIResponse(status="error", error=f"Missing required fields: {', '.join(missing_fields)}")

@@ -224,6 +224,7 @@ class Agent:
         logger.info(f"Product to respond: {product_results}")
 
         base_response = {
+            "user_id": user_id,
             "user_query": input_data.get("query", ""),
             "image": image_url,
             "response": final_response,
@@ -238,7 +239,6 @@ class Agent:
             logger.warning(f"Failed to save history for user {user_id}: {save_history_response.error}")
         
         base_response.pop("_id", None)
-        base_response["user_id"]=user_id
         base_response["timestamp"] = datetime.now().isoformat() 
         base_response["products"] = product_results
 
