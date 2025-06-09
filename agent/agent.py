@@ -1,8 +1,8 @@
 from .history import History
-from .personalization import Personalization
+# from .personalization import Personalization
 from .prompts import PROMPTS
 import openai
-import asyncio
+# import asyncio
 import os 
 from typing import Optional, Union, Dict, Literal
 from pydantic import BaseModel, Field
@@ -11,6 +11,7 @@ from datetime import datetime
 import requests
 import boto3
 import uuid
+from time import time
 from botocore.exceptions import NoCredentialsError, ClientError
 import logging
 from fastapi import UploadFile
@@ -123,34 +124,46 @@ class Agent:
         self.chatbot = openai.OpenAI()
         self.model = model
         self.history = History() 
-        self.personalization = Personalization(summarizer = self.chatbot)
+        # self.personalization = Personalization(summarizer = self.chatbot)
+        self.lastCall = []
 
     async def get_response(self, user_id, input_data):
-        history_task = self.history.retrieve_history(user_id=user_id, look_back=5)
-        summary_task = self.personalization.retrieve_user_summary(user_id)
-        past_convo_response, user_summary_response = await asyncio.gather(history_task, summary_task)
+        start = time()
+        # history_task = self.history.retrieve_history(user_id=user_id, look_back=5)
+        # # summary_task = self.personalization.retrieve_user_summary(user_id)
+        # past_convo_response= await asyncio.gather(history_task)
 
-        past_convo_result = past_convo_response.model_dump()
+        retrieved_history = await self.history.retrieve_history(user_id=user_id, look_back=3)
+        end = time()
+        logger.info(f"Time taken to retrieve history: {end - start:.2f} seconds")
+        # logger.info(f"Retrieved history: {retrieved_history}")
+        # logger.info(f"History type: {type(retrieved_history)}")
 
-        if past_convo_result["status"] == "success" and past_convo_result.get("data"):
+        start = time()
+        past_convo_result = retrieved_history.model_dump()
+        
+
+        if past_convo_result["status"] == "success" and past_convo_result.get("data", ""):
             chat_history = past_convo_result["data"].get("history", [])
             # logger.info(f"Chat history: {chat_history}")
-
         else:
             chat_history = ["No past conversations found."]
             logger.info("No past conversations found.")
 
-        user_summary_result = user_summary_response.model_dump()
+        # user_summary_result = user_summary_response.model_dump()
         
-        if user_summary_result["status"] == "success" and user_summary_result.get("data"):
-            user_summary = user_summary_result["data"].get("summary", {})
-        else:
-            user_summary = {"personal_info": [], "preferences": []}
+        # if user_summary_result["status"] == "success" and user_summary_result.get("data"):
+        #     user_summary = user_summary_result["data"].get("summary", {})
+        # else:
+        #     user_summary = {"personal_info": [], "preferences": []}
 
         # print("Building router message")
-        router_message = f"Past conversations: {chat_history}\nUser summary: {user_summary}\n"
+        router_message = f"Past conversations: {chat_history}" # \nUser summary: {user_summary}\n
         if input_data.get("query"):
             router_message += f"User query: {input_data['query']}"
+
+        end = time()
+        logger.info(f"Time taken to build router message: {end - start:.2f} seconds")
 
         # print(router_message)
 
@@ -158,9 +171,8 @@ class Agent:
         product_results=[]
 
         if input_data.get("image"):
-
+            start = time()
             image = input_data.get("image")
-            print("On image track")
 
             if image:
                 # Check nếu là UploadFile thì phải await, nếu là bytes thì dùng luôn
@@ -179,9 +191,12 @@ class Agent:
                 # print("Image URL:", image_url)
                 product_results = product_results.get("top_k_results", [])
                 # print("\nProduct results:", product_results)
-                full_context_query = f"User's intent: {input_data.get("query", "Tìm sản phẩm bằng hình")}\nUser Preferences:{user_summary}\nRelevant products:{str(product_results)}\nRecent Conversations:{chat_history}"
+                full_context_query = f"User's intent: {input_data.get("query", "Tìm sản phẩm bằng hình")}\nRelevant products:{str(product_results)}\nRecent Conversations:{chat_history}" # User Preferences:{user_summary}\n
                 # print("Full context query:", full_context_query)
+                end = time()
+                logger.info(f"Time taken to process image and get product results: {end - start:.2f} seconds")
         else:
+            start = time()
             print("On text track")
             # logger.info(RouterResponse.model_json_schema())
             results = self.chatbot.beta.chat.completions.parse(
@@ -192,7 +207,7 @@ class Agent:
                 ],
                 response_format = RouterResponse
             ).choices[0].message.parsed
-            full_context_query = f"User's intent: {results.intent}\nUser Preferences:\n{user_summary}\nRecent Conversations:\n{chat_history}"
+            full_context_query = f"User's intent: {results.intent}\nRecent Conversations:\n{chat_history}" # \nUser Preferences:\n{user_summary}
             # logger.info(f"Router results: {results}")
             if results.intent:
                 logger.info("User needs context")
@@ -213,7 +228,11 @@ class Agent:
                     product_results = product_results.get("top_k_results", [])
 
                 full_context_query += f"\nRelevant products:{str(product_results)}"
+            end = time()
+            logger.info(f"Time taken to process text query and get product results: {end - start:.2f} seconds")
 
+        start = time()
+        # logger.info(f"Full context query: {full_context_query}")
         final_response = self.chatbot.chat.completions.create(
             model=self.model,
             messages=[
@@ -221,25 +240,36 @@ class Agent:
                 {"role": "user", "content": full_context_query}
             ]
         ).choices[0].message.content
-        logger.info(f"Product to respond: {product_results}")
+        # logger.info(f"Product to respond: {product_results}")
+        if product_results:
+            self.lastCall = product_results
+        else: 
+            product_results = self.lastCall
+        end = time()
+        logger.info(f"Time taken to generate final response: {end - start:.2f} seconds")
 
+        start = time()
         base_response = {
             "user_id": user_id,
             "user_query": input_data.get("query", ""),
             "image": image_url,
             "response": final_response,
+            "timestamp": datetime.now().isoformat()
         }
 
-        history_task = self.history.add_to_history(user_id, base_response)
-        summary_task = self.personalization.update_user_summary(user_id, base_response)
-        save_history_response, update_summary_response = await asyncio.gather(history_task, summary_task)
+        # history_task = self.history.add_to_history(user_id, base_response)
+        # # summary_task = self.personalization.update_user_summary(user_id, base_response)
+        # save_history_response= await asyncio.gather(history_task)
+        save_history_response = await self.history.add_to_history(user_id, base_response)
 
-        if update_summary_response.status != "success" or save_history_response.status != "success":
-            logger.warning(f"Failed to update user summary for user {user_id}: {update_summary_response.error}")
-            logger.warning(f"Failed to save history for user {user_id}: {save_history_response.error}")
+        if save_history_response.status != "success": # update_summary_response.status != "success" or 
+            # logger.warning(f"Failed to update user summary for user {user_id}: {update_summary_response.error}")
+            logger.warning(f"Failed to save history for user {user_id}: {save_history_response[0].error}")
+
+        end = time()
+        logger.info(f"Time taken to save history and update summary: {end - start:.2f} seconds")
         
         base_response.pop("_id", None)
-        base_response["timestamp"] = datetime.now().isoformat() 
         base_response["products"] = product_results
 
         return base_response
