@@ -2,7 +2,7 @@ import os
 import sys
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware  
-from typing import Optional
+from typing import Optional, List
 from agent import Agent 
 import datetime 
 from fastapi.exceptions import HTTPException
@@ -88,6 +88,56 @@ async def get_response(
         input_data = {
             "query": text,
             "image": image,
+        }
+
+        response = await agent.get_response(
+            user_id=user_id,
+            input_data=input_data
+        )
+        
+        logger.info(f"Response from agent: {response}")
+
+        response_time = datetime.datetime.now()
+        response["latency"] = (response_time - datetime.datetime.fromisoformat(timestamp)).total_seconds()
+        return_data = {
+            "action": "get_response",
+            "status": "success",
+            "response": response,
+        }
+
+        return return_data
+
+    except ValueError as ve:
+        logger.error(f"Invalid input data: {str(ve)}")
+        raise HTTPException(status_code=400, detail={
+            "action": "get_response",
+            "status": "error",
+            "error": "Invalid input data",
+            "message": str(ve)
+        })
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        raise HTTPException(status_code=500, detail={
+            "action": "get_response",
+            "status": "error",
+            "error": "Internal server error",
+            "message": "An unexpected error occurred"
+        })
+    
+
+@app.post("/api/v1/agent/get_image_responses/", summary="Get response from agent with multiple images")
+async def get_response(
+    conversation_id: str = Form(...),
+    user_id: str = Form(...),
+    text: Optional[str] = Form(None),
+    images: List[UploadFile] = File(...),
+):
+    print(f"Received request with conversation_id: {conversation_id}, user_id: {user_id}, text: {text}, images: {[image.filename for image in images]}")
+    try:
+        timestamp = datetime.datetime.now().isoformat()
+        input_data = {
+            "query": text,
+            "images": images,
         }
 
         response = await agent.get_response(
